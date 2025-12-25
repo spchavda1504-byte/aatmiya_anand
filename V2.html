@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HariPrabodham Aatmiya Anand</title>
+  <link rel="stylesheet" href="./index.css">
+</head>
+<body>
+
+<header>
+  <h1>HariPrabodham Aatmiya Anand</h1>
+  <p>Games • Learning • Joy</p>
+</header>
+
+<!-- HOME PAGE -->
+<div id="home" class="container">
+  <div class="game-box" onclick="openBingo()">
+    <h2>🎯 Bingo</h2>
+    <p>Play together and enjoy</p>
+  </div>
+
+  <div class="game-box">
+    <h2>🧩 Coming Soon</h2>
+    <p>More games will be added</p>
+  </div>
+</div>
+
+<!-- BINGO HOST PAGE -->
+<div id="bingo" class="container hidden">
+  <div style="grid-column: 1 / -1; text-align:center;">
+    <h2>Bingo (Host)</h2>
+
+    <label>Number of Participants: </label>
+    <input type="number" id="participants" min="1" max="50" value="5" />
+    <br/><br/>
+
+    <button onclick="generateBingo()">Generate Player QR Codes</button>
+    <button onclick="drawNumber()">Draw Number</button>
+    <button onclick="goHome()">Back to Home</button>
+
+    <div class="number-display" id="currentNumber">–</div>
+    <p style="max-width:900px;margin:0 auto;color:#444;font-size:13px;">
+      Host generates unique player links. Players scan QR → they get their own board on their phone.
+    </p>
+  </div>
+
+  <div id="boards" style="grid-column: 1 / -1;"></div>
+</div>
+
+<script>
+  // =========================
+  // STATE
+  // =========================
+  let drawnNumbers = [];
+  const allNumbers = Array.from({ length: 25 }, (_, i) => i + 1);
+
+  // =========================
+  // NAV
+  // =========================
+  function openBingo() {
+    document.getElementById('home').classList.add('hidden');
+    document.getElementById('bingo').classList.remove('hidden');
+  }
+
+  function goHome() {
+    document.getElementById('bingo').classList.add('hidden');
+    document.getElementById('home').classList.remove('hidden');
+    document.getElementById('boards').innerHTML = '';
+    drawnNumbers = [];
+    document.getElementById('currentNumber').innerText = '–';
+  }
+
+  // =========================
+  // UTILS
+  // =========================
+  function fisherYatesShuffle(arr) {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  function generatePlayerLink(boardNumbers) {
+    // encode board in URL so QR works with no backend
+    const encodedBoard = btoa(JSON.stringify(boardNumbers));
+    return `${window.location.origin}${window.location.pathname}?playerBoard=${encodeURIComponent(encodedBoard)}`;
+  }
+
+  // =========================
+  // HOST: GENERATE QR CODES
+  // =========================
+  function generateBingo() {
+    const count = Number(document.getElementById('participants').value || 0);
+    if (count < 1) return alert("Enter participants >= 1");
+
+    const boardsDiv = document.getElementById('boards');
+    boardsDiv.innerHTML = '';
+    drawnNumbers = [];
+    document.getElementById('currentNumber').innerText = '–';
+
+    for (let i = 1; i <= count; i++) {
+      const numbers = fisherYatesShuffle(allNumbers).slice(0, 25);
+      const link = generatePlayerLink(numbers);
+      const qr = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(link)}`;
+
+      const card = document.createElement('div');
+      card.className = 'host-card';
+      card.innerHTML = `
+        <h3 style="margin:0 0 10px 0;">Player ${i}</h3>
+        <img src="${qr}" alt="QR Code for Player ${i}" />
+        <div class="small-link">${link}</div>
+      `;
+
+      boardsDiv.appendChild(card);
+    }
+  }
+
+  // =========================
+  // HOST: DRAW NUMBER
+  // =========================
+  function drawNumber() {
+    const remaining = allNumbers.filter(n => !drawnNumbers.includes(n));
+    if (remaining.length === 0) return alert('All numbers drawn');
+
+    const num = remaining[Math.floor(Math.random() * remaining.length)];
+    drawnNumbers.push(num);
+    document.getElementById('currentNumber').innerText = num;
+  }
+
+  // =========================
+  // PLAYER MODE: LOAD BOARD FROM URL
+  // =========================
+  function loadPlayerBoard() {
+    const params = new URLSearchParams(window.location.search);
+    const encoded = params.get('playerBoard');
+    if (!encoded) return; // not player mode
+
+    let numbers;
+    try {
+      numbers = JSON.parse(atob(decodeURIComponent(encoded)));
+      if (!Array.isArray(numbers) || numbers.length !== 25) throw new Error("bad board");
+    } catch (e) {
+      document.body.innerHTML = "<p style='text-align:center;margin-top:30px;'>Invalid Bingo link.</p>";
+      return;
+    }
+
+    const boardKey = "bingo_marks_" + encoded; // unique per board
+    const saved = JSON.parse(localStorage.getItem(boardKey) || "[]"); // indexes marked
+
+    document.body.innerHTML = `
+      <header>
+        <h1>Your Bingo Board</h1>
+        <p>Tap a number to mark/unmark</p>
+      </header>
+      <div style="text-align:center; padding:16px;">
+        <button id="resetMarksBtn">Reset Marks</button>
+      </div>
+    `;
+
+    const grid = document.createElement('div');
+    grid.className = 'bingo-board';
+    grid.style.margin = '0 auto 30px auto';
+
+    numbers.forEach((num, idx) => {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.innerText = num;
+
+      if (saved.includes(idx)) cell.classList.add('marked');
+
+      cell.addEventListener('click', () => {
+        cell.classList.toggle('marked');
+        const markedIdx = [];
+        grid.querySelectorAll('.cell').forEach((c, i) => {
+          if (c.classList.contains('marked')) markedIdx.push(i);
+        });
+        localStorage.setItem(boardKey, JSON.stringify(markedIdx));
+      });
+
+      grid.appendChild(cell);
+    });
+
+    document.body.appendChild(grid);
+
+    document.getElementById("resetMarksBtn").onclick = () => {
+      localStorage.removeItem(boardKey);
+      grid.querySelectorAll('.cell').forEach(c => c.classList.remove('marked'));
+    };
+  }
+
+  window.onload = loadPlayerBoard;
+</script>
+
+</body>
+</html>
